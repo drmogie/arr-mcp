@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arr-mcp"
+version = "2026.10.5.1"
+description = "MCP tool that lets Claude manage Sonarr, Radarr, Prowlarr, Bazarr, Overseerr, qBittorrent and Jellyfin."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "drmogie" }]
+dependencies = ["mcp>=1.2,<2"]
+
+[project.scripts]
+arr-mcp = "arr_mcp:main"
+
+[tool.setuptools]
+packages = ["arr_mcp"]
