@@ -33,8 +33,9 @@ async def main():
                "ARR_RADARR_URL": f"{BASE}/radarr", "ARR_RADARR_KEY": "k-radarr",
                "ARR_PROWLARR_URL": f"{BASE}/prowlarr", "ARR_PROWLARR_KEY": "k-prowlarr",
                "ARR_BAZARR_URL": f"{BASE}/bazarr", "ARR_BAZARR_KEY": "k-bazarr",
-               "ARR_OVERSEERR_URL": f"{BASE}/overseerr", "ARR_OVERSEERR_KEY": "k-overseerr",
+               "ARR_SEERR_URL": f"{BASE}/seerr", "ARR_SEERR_KEY": "k-seerr",
                "ARR_JELLYFIN_URL": f"{BASE}/jellyfin", "ARR_JELLYFIN_KEY": "k-jellyfin",
+               "ARR_TDARR_URL": f"{BASE}/tdarr", "ARR_TDARR_KEY": "k-tdarr",
                "ARR_QBITTORRENT_URL": f"{BASE}/qbittorrent",
                "ARR_QBITTORRENT_USER": "admin", "ARR_QBITTORRENT_PASS": "pw"}
         params = StdioServerParameters(command=sys.executable, args=["-m", "arr_mcp"], env=env)
@@ -44,13 +45,13 @@ async def main():
                 tools = {t.name for t in (await s.list_tools()).tools}
                 ok &= check("tools listed", {"arr_services", "arr_call", "arr_status", "arr_queue",
                             "arr_search", "arr_add", "arr_calendar", "arr_downloads",
-                            "arr_requests", "jellyfin_now_playing"} <= tools, str(tools))
+                            "arr_requests", "jellyfin_now_playing", "tdarr_summary"} <= tools, str(tools))
 
                 out = await call(s, "arr_services")
                 ok &= check("services list, no keys", "sonarr" in out and "k-sonarr" not in out and "pw" not in out.replace("password", ""), out)
 
                 out = await call(s, "arr_status")
-                ok &= check("status all services", all(x in out for x in ["4.0.1", "1.30", "1.5.0", "1.34", "10.11.0", "v5.0.0"]), out)
+                ok &= check("status all services", all(x in out for x in ["4.0.1", "1.30", "1.5.0", "1.34", "10.11.0", "v5.0.0", "3.00.00"]), out)
                 ok &= check("status shows health warning", "Indexers unavailable" in out, out)
 
                 out = await call(s, "arr_queue")
@@ -60,8 +61,8 @@ async def main():
                 ok &= check("search sonarr + in_library", "tvdbId" in out and '"library_id": 7' in out, out)
                 out = await call(s, "arr_search", {"term": "film", "service": "radarr"})
                 ok &= check("search radarr", "Film" in out and "222" in out, out)
-                out = await call(s, "arr_search", {"term": "film", "service": "overseerr"})
-                ok &= check("search overseerr", "Film" in out, out)
+                out = await call(s, "arr_search", {"term": "film", "service": "seerr"})
+                ok &= check("search seerr", "Film" in out, out)
 
                 out = await call(s, "arr_calendar")
                 ok &= check("calendar", "Pilot" in out, out)
@@ -71,6 +72,21 @@ async def main():
                 ok &= check("requests", "pending" in out and "Kid" in out, out)
                 out = await call(s, "jellyfin_now_playing")
                 ok &= check("jellyfin sessions", "dad" in out and "Movie" in out, out)
+
+                # Tdarr
+                out = await call(s, "tdarr_summary")
+                ok &= check("tdarr summary", '"Queued": 2' in out and "C.mkv" in out and "themedia-node" in out and '"failed_count": 1' in out, out)
+                n = len(log())
+                out = await call(s, "arr_call", {"service": "tdarr", "method": "POST", "path": "/cruddb",
+                                                 "body": {"data": {"collection": "FileJSONDB", "mode": "getAll"}}})
+                ok &= check("tdarr db read runs without confirm", "NOT RUN" not in out and "A.mkv" in out, out)
+                n = len(log())
+                out = await call(s, "arr_call", {"service": "tdarr", "method": "POST", "path": "/cruddb",
+                                                 "body": {"data": {"collection": "LibrarySettingsJSONDB", "mode": "update", "docID": "x", "obj": {}}}})
+                ok &= check("tdarr db update needs confirm", "NOT RUN" in out and len(log()) == n, out)
+                out = await call(s, "arr_call", {"service": "tdarr", "method": "POST", "path": "/cruddb", "confirm": True,
+                                                 "body": {"data": {"collection": "FileJSONDB", "mode": "removeOne", "docID": "x"}}})
+                ok &= check("tdarr db remove needs phrase", "NOT RUN" in out and len(log()) == n, out)
 
                 # Reads through arr_call
                 out = await call(s, "arr_call", {"service": "qbittorrent", "path": "/app/version"})
@@ -96,15 +112,15 @@ async def main():
 
                 # Blocked paths
                 for svc, p in [("qbittorrent", "/auth/login"), ("jellyfin", "/Users/AuthenticateByName"),
-                               ("sonarr", "/initialize.js"), ("overseerr", "/auth/local")]:
+                               ("sonarr", "/initialize.js"), ("seerr", "/auth/local")]:
                     out = await call(s, "arr_call", {"service": svc, "path": p, "method": "POST"})
                     ok &= check(f"blocked {svc} {p}", "not allowed" in out, out)
 
                 # Safety: change needs confirm
                 n0 = len(log())
-                out = await call(s, "arr_call", {"service": "overseerr", "method": "POST", "path": "/request/3/approve"})
+                out = await call(s, "arr_call", {"service": "seerr", "method": "POST", "path": "/request/3/approve"})
                 ok &= check("change not run without confirm", "NOT RUN" in out and len(log()) == n0, out)
-                out = await call(s, "arr_call", {"service": "overseerr", "method": "POST", "path": "/request/3/approve", "confirm": True})
+                out = await call(s, "arr_call", {"service": "seerr", "method": "POST", "path": "/request/3/approve", "confirm": True})
                 ok &= check("change runs with confirm", "ERROR" not in out and len(log()) == n0 + 1, out)
 
                 # Safety: destructive needs phrase
@@ -120,7 +136,7 @@ async def main():
                 # Destructive classification
                 for args in [
                     {"service": "jellyfin", "method": "POST", "path": "/System/Restart"},
-                    {"service": "overseerr", "method": "POST", "path": "/settings/main"},
+                    {"service": "seerr", "method": "POST", "path": "/settings/main"},
                     {"service": "sonarr", "method": "POST", "path": "/command", "body": {"name": "RestartApplication"}},
                     {"service": "qbittorrent", "method": "POST", "path": "/torrents/delete", "params": {"hashes": "abc", "deleteFiles": True}},
                     {"service": "qbittorrent", "method": "POST", "path": "/app/setPreferences", "params": {"json": json.dumps({"web_ui_port": 9999})}},

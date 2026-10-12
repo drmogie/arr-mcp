@@ -4,7 +4,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import urlparse, parse_qs
 
 KEYS = {"sonarr": "k-sonarr", "radarr": "k-radarr", "prowlarr": "k-prowlarr",
-        "bazarr": "k-bazarr", "overseerr": "k-overseerr", "jellyfin": "k-jellyfin"}
+        "bazarr": "k-bazarr", "seerr": "k-seerr", "jellyfin": "k-jellyfin",
+        "tdarr": "k-tdarr"}
 LOG = []
 
 ROUTES = {
@@ -36,18 +37,25 @@ ROUTES = {
     ("prowlarr", "GET", "/api/v1/health"): [],
     ("bazarr", "GET", "/api/system/status"): {"data": {"bazarr_version": "1.5.0"}},
     ("bazarr", "GET", "/api/system/health"): {"data": []},
-    ("overseerr", "GET", "/api/v1/status"): {"version": "1.34", "updateAvailable": False},
-    ("overseerr", "GET", "/api/v1/request"): {"results": [{"id": 3, "status": 1, "type": "movie",
+    ("seerr", "GET", "/api/v1/status"): {"version": "1.34", "updateAvailable": False},
+    ("seerr", "GET", "/api/v1/request"): {"results": [{"id": 3, "status": 1, "type": "movie",
         "media": {"tmdbId": 222}, "requestedBy": {"displayName": "Kid"}, "createdAt": "2026-10-05"}]},
-    ("overseerr", "GET", "/api/v1/search"): {"results": [{"mediaType": "movie", "id": 222,
+    ("seerr", "GET", "/api/v1/search"): {"results": [{"mediaType": "movie", "id": 222,
         "title": "Film", "releaseDate": "2021-01-01"}]},
-    ("overseerr", "POST", "/api/v1/request/3/approve"): {"id": 3},
-    ("overseerr", "POST", "/api/v1/settings/main"): {},
+    ("seerr", "POST", "/api/v1/request/3/approve"): {"id": 3},
+    ("seerr", "POST", "/api/v1/settings/main"): {},
     ("jellyfin", "GET", "/System/Info"): {"ServerName": "jf", "Version": "10.11.0", "HasPendingRestart": False},
     ("jellyfin", "GET", "/Sessions"): [{"UserName": "dad", "DeviceName": "TV", "Client": "Android TV",
         "NowPlayingItem": {"Name": "Movie", "Type": "Movie"}, "PlayState": {"IsPaused": False}}],
     ("jellyfin", "POST", "/Library/Refresh"): None,
     ("jellyfin", "POST", "/System/Restart"): None,
+    ("tdarr", "GET", "/api/v2/status"): {"status": "good", "version": "3.00.00"},
+    ("tdarr", "GET", "/api/v2/get-nodes"): {"n1": {"nodeName": "themedia-node", "nodePaused": False,
+        "workerLimits": {"transcodecpu": 1}, "workers": {}}},
+    ("tdarr", "POST", "/api/v2/cruddb"): [
+        {"file": "/m/A.mkv", "TranscodeDecisionMaker": "Queued"},
+        {"file": "/m/B.mkv", "TranscodeDecisionMaker": "Queued"},
+        {"file": "/m/C.mkv", "TranscodeDecisionMaker": "Transcode error"}],
     ("qbittorrent", "GET", "/api/v2/app/version"): "v5.0.0",
     ("qbittorrent", "GET", "/api/v2/transfer/info"): {"dl_info_speed": 1048576, "up_info_speed": 0,
         "connection_status": "connected"},

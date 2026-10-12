@@ -9,9 +9,10 @@ A small tool that lets Claude read and manage your media stack:
 - Radarr (movies)
 - Prowlarr (indexers)
 - Bazarr (subtitles)
-- Overseerr (requests)
+- Seerr (requests)
 - qBittorrent (downloads)
 - Jellyfin (your media server)
+- Tdarr (video conversion)
 
 It runs on your own computer. Your keys stay on your computer.
 Only the services you set up are turned on.
@@ -21,8 +22,9 @@ Only the services you set up are turned on.
 - Check that every service is alive, with version and health warnings.
 - Show the download queue, torrents, and upcoming episodes and movies.
 - Search for a show or movie and add it (`arr_add`).
-- Show Overseerr requests. Approve or decline them.
+- Show Seerr requests. Approve or decline them.
 - Show who is watching on Jellyfin.
+- Show what Tdarr is converting, and which files failed (`tdarr_summary`).
 - Anything else the apps can do (`arr_call`), for example refresh a library,
   trigger a search, pause a torrent, or change a setting.
 
@@ -49,8 +51,9 @@ Other protections:
 
 - Sonarr, Radarr, Prowlarr: Settings, General, Security, API Key.
 - Bazarr: Settings, General, Security, API Key.
-- Overseerr: Settings, General, API Key.
+- Seerr: Settings, General, API Key.
 - Jellyfin: Dashboard, API Keys, add a key named `Claude`.
+- Tdarr: Tools, API Keys, make a key named `Claude`.
 - qBittorrent: it has no key. Use your web page user name and password.
   Best: turn on the web page login for a separate user if your version allows it.
 
@@ -67,10 +70,14 @@ An address can include a URL base, like `http://nas:8989/sonarr`.
 
 That file now holds secrets. Do not share it. Do not put it on GitHub.
 
-The example uses `uvx`. If you do not have it, use Python instead:
+The example uses `uvx`. It downloads arr-mcp from GitHub. No local copy is needed.
+To get a new version later, run `uvx --refresh --from git+https://github.com/drmogie/arr-mcp arr-mcp --help` once, or restart the app.
+To pin one release, add `@2026.10.12.01` after the URL.
+
+If you do not have `uvx`, use Python instead:
 
 ```
-pip install D:\GitHub-Projects\arr-mcp
+pip install git+https://github.com/drmogie/arr-mcp
 ```
 
 Then use `"command": "arr-mcp"` and no args.
@@ -84,8 +91,8 @@ Ask Claude: "Check my arr stack."
 ## Settings
 
 - `ARR_<SERVICE>_URL` and `ARR_<SERVICE>_KEY`: see the example file.
-  Services are `SONARR`, `RADARR`, `PROWLARR`, `BAZARR`, `OVERSEERR`, `JELLYFIN`.
-- `ARR_QBITTORRENT_URL`, `ARR_QBITTORRENT_USER`, `ARR_QBITTORRENT_PASS`.
+  Services are `SONARR`, `RADARR`, `PROWLARR`, `BAZARR`, `SEERR`, `JELLYFIN`, `TDARR`.
+- `ARR_QBITTORRENT_URL`. `ARR_QBITTORRENT_USER` and `ARR_QBITTORRENT_PASS` are optional. Leave them out if qBittorrent skips the login for your network.
 - `ARR_VERIFY_TLS=false`: for an https address with a self-signed certificate.
 - `ARR_TIMEOUT`: seconds to wait for an answer. Default 30.
 
@@ -98,8 +105,9 @@ Ask Claude: "Check my arr stack."
 - `arr_add`: add it. Shows a preview first.
 - `arr_calendar`: coming episodes and releases.
 - `arr_downloads`: qBittorrent torrents.
-- `arr_requests`: Overseerr requests.
+- `arr_requests`: Seerr requests.
 - `jellyfin_now_playing`: who is watching.
+- `tdarr_summary`: Tdarr nodes, workers, files by state, failed files.
 - `arr_call`: any other API call.
 
 ## Test it
@@ -109,7 +117,7 @@ pip install "mcp>=1.2,<2"
 python tests/test_server.py
 ```
 
-The test starts a fake server that acts like all seven services.
+The test starts a fake server that acts like all eight services.
 It checks every tool and every safety rule.
 
 ## Limits

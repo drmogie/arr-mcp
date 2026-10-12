@@ -2,7 +2,7 @@
   "mcpServers": {
     "arr-stack": {
       "command": "uvx",
-      "args": ["--from", "D:\\GitHub-Projects\\arr-mcp", "arr-mcp"],
+      "args": ["--from", "git+https://github.com/drmogie/arr-mcp", "arr-mcp"],
       "env": {
         "ARR_SONARR_URL": "http://nas:8989",
         "ARR_SONARR_KEY": "PUT-KEY-HERE",
@@ -12,13 +12,15 @@
         "ARR_PROWLARR_KEY": "PUT-KEY-HERE",
         "ARR_BAZARR_URL": "http://nas:6767",
         "ARR_BAZARR_KEY": "PUT-KEY-HERE",
-        "ARR_OVERSEERR_URL": "http://nas:5055",
-        "ARR_OVERSEERR_KEY": "PUT-KEY-HERE",
+        "ARR_SEERR_URL": "http://nas:5055",
+        "ARR_SEERR_KEY": "PUT-KEY-HERE",
         "ARR_JELLYFIN_URL": "http://nas:8096",
         "ARR_JELLYFIN_KEY": "PUT-KEY-HERE",
         "ARR_QBITTORRENT_URL": "http://nas:8080",
         "ARR_QBITTORRENT_USER": "PUT-USER-HERE",
-        "ARR_QBITTORRENT_PASS": "PUT-PASSWORD-HERE"
+        "ARR_QBITTORRENT_PASS": "PUT-PASSWORD-HERE",
+        "ARR_TDARR_URL": "http://nas:8265",
+        "ARR_TDARR_KEY": "PUT-KEY-HERE"
       }
     }
   }

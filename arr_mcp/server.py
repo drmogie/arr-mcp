@@ -1,7 +1,7 @@
 """Arr stack MCP tool.
 
-Lets Claude read and manage Sonarr, Radarr, Prowlarr, Bazarr, Overseerr,
-qBittorrent and Jellyfin through their own APIs.
+Lets Claude read and manage Sonarr, Radarr, Prowlarr, Bazarr, Seerr,
+qBittorrent, Jellyfin and Tdarr through their own APIs.
 
 Settings come from environment variables only. Keys and passwords are never
 written to disk, never printed, and only sent to the matching service.
@@ -13,9 +13,10 @@ are simply off.
   ARR_RADARR_URL      ARR_RADARR_KEY
   ARR_PROWLARR_URL    ARR_PROWLARR_KEY
   ARR_BAZARR_URL      ARR_BAZARR_KEY
-  ARR_OVERSEERR_URL   ARR_OVERSEERR_KEY
+  ARR_SEERR_URL   ARR_SEERR_KEY   (ARR_OVERSEERR_* still works)
   ARR_JELLYFIN_URL    ARR_JELLYFIN_KEY
   ARR_QBITTORRENT_URL ARR_QBITTORRENT_USER ARR_QBITTORRENT_PASS
+  ARR_TDARR_URL       ARR_TDARR_KEY   (a Tdarr API key, made in Tools, API Keys)
   ARR_VERIFY_TLS      "false" to skip TLS checks for self-signed https
   ARR_TIMEOUT         seconds to wait for an answer (default 30)
 
@@ -35,7 +36,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-__version__ = "2026.10.05.01"
+__version__ = "2026.10.12.01"
 
 mcp = FastMCP("arr-stack")
 
@@ -49,9 +50,10 @@ SERVICES: dict[str, dict[str, str]] = {
     "radarr": {"label": "Radarr", "prefix": "/api/v3", "auth": "x-api-key"},
     "prowlarr": {"label": "Prowlarr", "prefix": "/api/v1", "auth": "x-api-key"},
     "bazarr": {"label": "Bazarr", "prefix": "/api", "auth": "x-api-key"},
-    "overseerr": {"label": "Overseerr", "prefix": "/api/v1", "auth": "x-api-key"},
+    "seerr": {"label": "Seerr", "prefix": "/api/v1", "auth": "x-api-key"},
     "jellyfin": {"label": "Jellyfin", "prefix": "", "auth": "jellyfin"},
     "qbittorrent": {"label": "qBittorrent", "prefix": "/api/v2", "auth": "cookie"},
+    "tdarr": {"label": "Tdarr", "prefix": "/api/v2", "auth": "x-api-key"},
 }
 
 # ---------------------------------------------------------------------------
@@ -86,7 +88,11 @@ RISKY_QBIT_PREFS = {
 SECRET_KEYS = {
     "apikey", "password", "passwordconfirmation", "token", "accesstoken",
     "secret", "api_key", "web_ui_password", "authtoken",
+    "seededapikey", "authsecretkey",
 }
+
+# Tdarr uses POST for database reads. These modes only read.
+TDARR_READ_MODES = {"getall", "getbyid", "getbyidmulti", "getone", "count"}
 SECRET_FIELD_NAMES = {"apikey", "password", "token", "secret", "passkey", "username"}
 
 METHODS = ("GET", "POST", "PUT", "DELETE", "PATCH")
@@ -100,12 +106,20 @@ def classify(service: str, method: str, path: str,
         return "read"
     if m == "DELETE":
         return "destructive"
+    if service == "tdarr" and low.endswith("/search-db"):
+        return "read"
+    if service == "tdarr" and low.endswith("/cruddb") and isinstance(body, dict):
+        mode = str((body.get("data") or {}).get("mode", "")).lower()
+        if mode in TDARR_READ_MODES:
+            return "read"
+        if mode.startswith("remove"):
+            return "destructive"
     if any(part in low for part in DESTRUCTIVE_PARTS):
         return "destructive"
     if low.endswith("/command") and isinstance(body, dict):
         if str(body.get("name", "")).lower() in DESTRUCTIVE_COMMANDS:
             return "destructive"
-    if service == "overseerr" and low.startswith("/settings"):
+    if service == "seerr" and low.startswith("/settings"):
         return "destructive"
     if service == "qbittorrent" and low.endswith("/app/setpreferences"):
         prefs: Any = (params or {}).get("json")
@@ -155,7 +169,17 @@ def _gate(service: str, method: str, path: str, params: dict[str, Any],
 # ---------------------------------------------------------------------------
 
 def _env(name: str) -> str:
-    return os.environ.get(name, "").strip()
+    val = os.environ.get(name, "").strip()
+    if not val and name.startswith("ARR_SEERR_"):
+        # Old name from when this service was called Overseerr.
+        val = os.environ.get("ARR_OVERSEERR_" + name[len("ARR_SEERR_"):], "").strip()
+    return val
+
+
+def _alias(service: str) -> str:
+    """Accept the old name 'overseerr' for Seerr."""
+    s = (service or "").strip().lower()
+    return "seerr" if s == "overseerr" else s
 
 
 def configured() -> list[str]:
@@ -171,7 +195,7 @@ def _config(service: str) -> tuple[str, str]:
     if not url:
         raise RuntimeError(
             f"{SERVICES[service]['label']} is not set up. Set ARR_{up}_URL and "
-            + (f"ARR_{up}_USER and ARR_{up}_PASS" if service == "qbittorrent" else f"ARR_{up}_KEY")
+            + ("(optional) ARR_QBITTORRENT_USER and ARR_QBITTORRENT_PASS" if service == "qbittorrent" else f"ARR_{up}_KEY")
             + " in this tool's environment (see the README)."
         )
     if service == "qbittorrent":
@@ -266,8 +290,12 @@ def _qbit_login(base: str) -> str | None:
     """Log in to qBittorrent. Returns an error text, or None when it worked."""
     user = _env("ARR_QBITTORRENT_USER")
     pw = _env("ARR_QBITTORRENT_PASS")
+    if not user and not pw:
+        # No login set: qBittorrent may skip passwords for trusted networks.
+        _qbit_cookie[base] = ""
+        return None
     if not user or not pw:
-        return "Set ARR_QBITTORRENT_USER and ARR_QBITTORRENT_PASS in this tool's environment."
+        return "Set both ARR_QBITTORRENT_USER and ARR_QBITTORRENT_PASS, or neither."
     data = urllib.parse.urlencode({"username": user, "password": pw}).encode()
     res = _send("POST", f"{base}/api/v2/auth/login",
                 {"Referer": base, "Content-Type": "application/x-www-form-urlencoded"}, data)
@@ -343,6 +371,9 @@ def _request(service: str, method: str, path: str,
 
     res = go()
     if svc["auth"] == "cookie" and res.get("status") == 403:
+        if not _env("ARR_QBITTORRENT_USER") and not _env("ARR_QBITTORRENT_PASS"):
+            return {"ok": False, "error": "qBittorrent wants a login from this address. "
+                    "Add this address to its no-password subnet list, or set ARR_QBITTORRENT_USER and ARR_QBITTORRENT_PASS."}
         _qbit_cookie.pop(base, None)
         if _qbit_login(base) is None:
             res = go()
@@ -411,7 +442,7 @@ def _get(service: str, path: str, **params: Any) -> dict[str, Any]:
 @mcp.tool()
 def arr_services() -> str:
     """List which services are set up (Sonarr, Radarr, Prowlarr, Bazarr,
-    Overseerr, Jellyfin, qBittorrent). Shows addresses only, never keys."""
+    Seerr, Jellyfin, qBittorrent, Tdarr). Shows addresses only, never keys."""
     on = set(configured())
     rows = []
     for name, svc in SERVICES.items():
@@ -437,15 +468,19 @@ def arr_call(
 ) -> str:
     """Call any API path on a service.
 
-    service: sonarr, radarr, prowlarr, bazarr, overseerr, jellyfin or qbittorrent.
+    service: sonarr, radarr, prowlarr, bazarr, seerr, jellyfin, qbittorrent or tdarr.
     path: the path after the API root, for example /series, /movie/12,
-      /system/status, /torrents/info, /Items. Do not add a query string.
+      /system/status, /torrents/info, /Items, /get-nodes. Do not add a query string.
     method: GET, POST, PUT, DELETE or PATCH.
     params: query options (for qBittorrent POST calls these are the form fields).
     body: JSON body for POST and PUT (not used by qBittorrent).
 
-    API roots added for you: Sonarr and Radarr /api/v3, Prowlarr and Overseerr
-    /api/v1, Bazarr /api, qBittorrent /api/v2, Jellyfin none.
+    API roots added for you: Sonarr and Radarr /api/v3, Prowlarr and Seerr
+    /api/v1, Bazarr /api, qBittorrent and Tdarr /api/v2, Jellyfin none.
+
+    Tdarr reads its database with POST /cruddb and a body like
+    {"data": {"collection": "LibrarySettingsJSONDB", "mode": "getAll"}}.
+    Those read modes run at once. Other modes need confirm=true.
 
     GET runs at once. Any change is NOT run until you set confirm=true, and you
     must first tell the user what will change and get a clear yes. Deleting,
@@ -454,7 +489,7 @@ def arr_call(
     for example "sonarr DELETE /series/5". Never guess a body: read an existing
     item with GET first and send it back with changes.
     """
-    service = service.lower().strip()
+    service = _alias(service)
     method = method.upper().strip()
     if service not in SERVICES:
         return f"ERROR: service must be one of: {', '.join(SERVICES)}."
@@ -511,13 +546,18 @@ def _probe(name: str) -> dict[str, Any]:
             st = (need(_get(name, "/system/status")) or {}).get("data", {})
             health = (need(_get(name, "/system/health")) or {}).get("data", [])
             return {"version": st.get("bazarr_version"), "health": health or "ok"}
-        if name == "overseerr":
+        if name == "seerr":
             st = need(_get(name, "/status")) or {}
             return {"version": st.get("version"), "update_available": st.get("updateAvailable")}
         if name == "jellyfin":
             st = need(_get(name, "/System/Info")) or {}
             return {"server": st.get("ServerName"), "version": st.get("Version"),
                     "restart_pending": st.get("HasPendingRestart")}
+        if name == "tdarr":
+            st = need(_get(name, "/status")) or {}
+            nodes = need(_get(name, "/get-nodes")) or {}
+            return {"version": st.get("version"), "status": st.get("status"),
+                    "nodes": [n.get("nodeName") for n in nodes.values()] if isinstance(nodes, dict) else nodes}
         ver = need(_get(name, "/app/version"))
         info = need(_get(name, "/transfer/info")) or {}
         return {"version": ver, "connection": info.get("connection_status"),
@@ -572,25 +612,25 @@ def arr_queue(service: str = "") -> str:
 def arr_search(term: str, service: str = "sonarr") -> str:
     """Look up a show or movie by name. Nothing is added.
 
-    service: sonarr (shows), radarr (movies) or overseerr (both).
+    service: sonarr (shows), radarr (movies) or seerr (both).
     Shows the id to use with arr_add. "in_library" is set when it already exists.
     """
-    service = service.lower().strip()
+    service = _alias(service)
     if service == "sonarr":
         res = _get("sonarr", "/series/lookup", term=term)
     elif service == "radarr":
         res = _get("radarr", "/movie/lookup", term=term)
-    elif service == "overseerr":
-        res = _get("overseerr", "/search", query=term, page=1)
+    elif service == "seerr":
+        res = _get("seerr", "/search", query=term, page=1)
     else:
-        return "ERROR: service must be sonarr, radarr or overseerr."
+        return "ERROR: service must be sonarr, radarr or seerr."
     if not res.get("ok"):
         return _render(res)
     data = res["data"]
     items = data.get("results", []) if isinstance(data, dict) else data
     rows = []
     for it in (items or [])[:10]:
-        if service == "overseerr":
+        if service == "seerr":
             media = it.get("mediaInfo") or {}
             rows.append({"type": it.get("mediaType"), "tmdbId": it.get("id"),
                          "title": it.get("title") or it.get("name"),
@@ -728,13 +768,13 @@ REQUEST_STATUS = {1: "pending", 2: "approved", 3: "declined", 4: "failed", 5: "c
 @mcp.tool()
 @_safe
 def arr_requests(filter: str = "pending", take: int = 20) -> str:
-    """Show Overseerr requests.
+    """Show Seerr requests.
 
     filter: pending, approved, available, processing, unavailable, failed, all.
     To approve or decline, use arr_call with POST /request/<id>/approve
     (or /decline) after the user says yes.
     """
-    res = _get("overseerr", "/request", take=max(1, min(take, 100)), skip=0,
+    res = _get("seerr", "/request", take=max(1, min(take, 100)), skip=0,
                filter=filter, sort="added")
     if not res.get("ok"):
         return _render(res)
@@ -748,6 +788,40 @@ def arr_requests(filter: str = "pending", take: int = 20) -> str:
             "created": r.get("createdAt"),
         })
     return json.dumps(rows, indent=1, ensure_ascii=False) if rows else "No requests."
+
+
+@mcp.tool()
+@_safe
+def tdarr_summary(show_failed: int = 10) -> str:
+    """Show what Tdarr is doing: nodes, workers, and how many files are in each state.
+
+    show_failed: how many failed file names to list (0 to 50).
+    """
+    nodes = _get("tdarr", "/get-nodes")
+    if not nodes.get("ok"):
+        return _render(nodes)
+    files = _request("tdarr", "POST", "/cruddb",
+                     body={"data": {"collection": "FileJSONDB", "mode": "getAll"}})
+    if not files.get("ok"):
+        return _render(files)
+    node_rows = []
+    for nid, n in (nodes["data"] or {}).items():
+        node_rows.append({
+            "name": n.get("nodeName"), "paused": n.get("nodePaused"),
+            "worker_limits": n.get("workerLimits"),
+            "workers_busy": len(n.get("workers") or {}),
+        })
+    counts: dict[str, int] = {}
+    failed: list[str] = []
+    for f in files["data"] or []:
+        state = str(f.get("TranscodeDecisionMaker") or "unknown")
+        counts[state] = counts.get(state, 0) + 1
+        if "error" in state.lower() or "fail" in state.lower():
+            failed.append(str(f.get("file")))
+    limit = max(0, min(show_failed, 50))
+    out = {"nodes": node_rows, "files_by_state": counts, "total_files": sum(counts.values()),
+           "failed_files": failed[:limit], "failed_count": len(failed)}
+    return json.dumps(out, indent=1, ensure_ascii=False)
 
 
 @mcp.tool()
