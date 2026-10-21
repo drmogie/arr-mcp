@@ -5,7 +5,7 @@ from urllib.parse import urlparse, parse_qs
 
 KEYS = {"sonarr": "k-sonarr", "radarr": "k-radarr", "prowlarr": "k-prowlarr",
         "bazarr": "k-bazarr", "seerr": "k-seerr", "jellyfin": "k-jellyfin",
-        "tdarr": "k-tdarr"}
+        "tdarr": "k-tdarr", "plex": "k-plex"}
 LOG = []
 
 ROUTES = {
@@ -49,6 +49,16 @@ ROUTES = {
         "NowPlayingItem": {"Name": "Movie", "Type": "Movie"}, "PlayState": {"IsPaused": False}}],
     ("jellyfin", "POST", "/Library/Refresh"): None,
     ("jellyfin", "POST", "/System/Restart"): None,
+    ("plex", "GET", "/"): {"MediaContainer": {"friendlyName": "PlexBox", "version": "1.41.0", "platform": "Linux", "myPlex": True}},
+    ("plex", "GET", "/status/sessions"): {"MediaContainer": {"Metadata": [{"title": "Pilot", "grandparentTitle": "Show", "type": "episode",
+        "User": {"title": "mom"}, "Player": {"title": "Roku", "product": "Plex for Roku", "state": "playing"},
+        "TranscodeSession": {"key": "x"}}]}},
+    ("plex", "GET", "/library/sections"): {"MediaContainer": {"Directory": [{"key": "1", "title": "Movies", "type": "movie",
+        "Location": [{"path": "/themedia/Video/Movies"}]}]}},
+    ("plex", "GET", "/library/sections/1/all"): {"MediaContainer": {"totalSize": 4200, "size": 0}},
+    ("plex", "GET", "/library/sections/1/refresh"): None,
+    ("plex", "GET", "/library/sections/1/emptyTrash"): None,
+    ("plex", "GET", "/accounts"): {"token": "k-plex"},
     ("tdarr", "GET", "/api/v2/status"): {"status": "good", "version": "3.00.00"},
     ("tdarr", "GET", "/api/v2/get-nodes"): {"n1": {"nodeName": "themedia-node", "nodePaused": False,
         "workerLimits": {"transcodecpu": 1}, "workers": {}}},
@@ -103,7 +113,7 @@ class H(BaseHTTPRequestHandler):
             if "SID=abc" not in (self.headers.get("Cookie") or ""):
                 return self.reply(403, "Forbidden")
         elif svc in KEYS:
-            auth = self.headers.get("X-Api-Key") or self.headers.get("Authorization") or ""
+            auth = self.headers.get("X-Api-Key") or self.headers.get("Authorization") or self.headers.get("X-Plex-Token") or ""
             if KEYS[svc] not in auth:
                 return self.reply(401, {"error": "Unauthorized"})
         else:

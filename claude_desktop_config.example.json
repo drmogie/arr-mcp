@@ -16,6 +16,8 @@
         "ARR_SEERR_KEY": "PUT-KEY-HERE",
         "ARR_JELLYFIN_URL": "http://nas:8096",
         "ARR_JELLYFIN_KEY": "PUT-KEY-HERE",
+        "ARR_PLEX_URL": "http://nas:32400",
+        "ARR_PLEX_KEY": "PUT-TOKEN-HERE",
         "ARR_QBITTORRENT_URL": "http://nas:8080",
         "ARR_QBITTORRENT_USER": "PUT-USER-HERE",
         "ARR_QBITTORRENT_PASS": "PUT-PASSWORD-HERE",

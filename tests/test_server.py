@@ -36,6 +36,7 @@ async def main():
                "ARR_SEERR_URL": f"{BASE}/seerr", "ARR_SEERR_KEY": "k-seerr",
                "ARR_JELLYFIN_URL": f"{BASE}/jellyfin", "ARR_JELLYFIN_KEY": "k-jellyfin",
                "ARR_TDARR_URL": f"{BASE}/tdarr", "ARR_TDARR_KEY": "k-tdarr",
+               "ARR_PLEX_URL": f"{BASE}/plex", "ARR_PLEX_KEY": "k-plex",
                "ARR_QBITTORRENT_URL": f"{BASE}/qbittorrent",
                "ARR_QBITTORRENT_USER": "admin", "ARR_QBITTORRENT_PASS": "pw"}
         params = StdioServerParameters(command=sys.executable, args=["-m", "arr_mcp"], env=env)
@@ -45,13 +46,14 @@ async def main():
                 tools = {t.name for t in (await s.list_tools()).tools}
                 ok &= check("tools listed", {"arr_services", "arr_call", "arr_status", "arr_queue",
                             "arr_search", "arr_add", "arr_calendar", "arr_downloads",
-                            "arr_requests", "jellyfin_now_playing", "tdarr_summary"} <= tools, str(tools))
+                            "arr_requests", "jellyfin_now_playing", "tdarr_summary",
+                            "plex_now_playing", "plex_libraries"} <= tools, str(tools))
 
                 out = await call(s, "arr_services")
                 ok &= check("services list, no keys", "sonarr" in out and "k-sonarr" not in out and "pw" not in out.replace("password", ""), out)
 
                 out = await call(s, "arr_status")
-                ok &= check("status all services", all(x in out for x in ["4.0.1", "1.30", "1.5.0", "1.34", "10.11.0", "v5.0.0", "3.00.00"]), out)
+                ok &= check("status all services", all(x in out for x in ["4.0.1", "1.30", "1.5.0", "1.34", "10.11.0", "v5.0.0", "3.00.00", "1.41.0"]), out)
                 ok &= check("status shows health warning", "Indexers unavailable" in out, out)
 
                 out = await call(s, "arr_queue")
@@ -72,6 +74,24 @@ async def main():
                 ok &= check("requests", "pending" in out and "Kid" in out, out)
                 out = await call(s, "jellyfin_now_playing")
                 ok &= check("jellyfin sessions", "dad" in out and "Movie" in out, out)
+
+                # Plex
+                out = await call(s, "plex_now_playing")
+                ok &= check("plex sessions", "mom" in out and "Show - Pilot" in out and "Roku" in out and '"transcoding": true' in out, out)
+                out = await call(s, "plex_libraries")
+                ok &= check("plex libraries", "Movies" in out and "4200" in out and "/themedia/Video/Movies" in out, out)
+                out = await call(s, "arr_call", {"service": "plex", "path": "/library/sections"})
+                ok &= check("plex read runs", "NOT RUN" not in out and "Movies" in out, out)
+                out = await call(s, "arr_call", {"service": "plex", "path": "/library/sections/1/refresh"})
+                ok &= check("plex refresh needs confirm", "NOT RUN" in out, out)
+                out = await call(s, "arr_call", {"service": "plex", "path": "/library/sections/1/refresh", "confirm": True})
+                ok &= check("plex refresh runs with confirm", "NOT RUN" not in out and "ERROR" not in out, out)
+                out = await call(s, "arr_call", {"service": "plex", "path": "/library/sections/1/emptyTrash", "confirm": True})
+                ok &= check("plex empty trash needs phrase", "NOT RUN" in out and "plex GET /library/sections/1/emptyTrash" in out, out)
+                out = await call(s, "arr_call", {"service": "plex", "path": "/accounts"})
+                ok &= check("plex accounts blocked", "not allowed" in out, out)
+                out = await call(s, "arr_services")
+                ok &= check("plex token not shown", "k-plex" not in out and "plex" in out, out)
 
                 # Tdarr
                 out = await call(s, "tdarr_summary")
@@ -103,7 +123,7 @@ async def main():
                 # Errors
                 out = await call(s, "arr_call", {"service": "sonarr", "path": "/nothing"})
                 ok &= check("404 hint", "ERROR" in out and "404" in out, out)
-                out = await call(s, "arr_call", {"service": "plex", "path": "/x"})
+                out = await call(s, "arr_call", {"service": "foo", "path": "/x"})
                 ok &= check("unknown service", "ERROR" in out, out)
                 out = await call(s, "arr_call", {"service": "sonarr", "path": "/series?x=1"})
                 ok &= check("query string refused", "ERROR" in out, out)

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "arr-mcp"
-version = "2026.10.12.1"
-description = "MCP tool that lets Claude manage Sonarr, Radarr, Prowlarr, Bazarr, Seerr, qBittorrent, Jellyfin and Tdarr."
+version = "2026.10.20.1"
+description = "MCP tool that lets Claude manage Sonarr, Radarr, Prowlarr, Bazarr, Seerr, qBittorrent, Jellyfin, Plex and Tdarr."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

@@ -1,7 +1,7 @@
 """Arr stack MCP tool.
 
 Lets Claude read and manage Sonarr, Radarr, Prowlarr, Bazarr, Seerr,
-qBittorrent, Jellyfin and Tdarr through their own APIs.
+qBittorrent, Jellyfin, Plex and Tdarr through their own APIs.
 
 Settings come from environment variables only. Keys and passwords are never
 written to disk, never printed, and only sent to the matching service.
@@ -15,6 +15,7 @@ are simply off.
   ARR_BAZARR_URL      ARR_BAZARR_KEY
   ARR_SEERR_URL   ARR_SEERR_KEY   (ARR_OVERSEERR_* still works)
   ARR_JELLYFIN_URL    ARR_JELLYFIN_KEY
+  ARR_PLEX_URL        ARR_PLEX_KEY    (a Plex token; see the README)
   ARR_QBITTORRENT_URL ARR_QBITTORRENT_USER ARR_QBITTORRENT_PASS
   ARR_TDARR_URL       ARR_TDARR_KEY   (a Tdarr API key, made in Tools, API Keys)
   ARR_VERIFY_TLS      "false" to skip TLS checks for self-signed https
@@ -36,7 +37,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-__version__ = "2026.10.12.01"
+__version__ = "2026.10.20.01"
 
 mcp = FastMCP("arr-stack")
 
@@ -52,6 +53,7 @@ SERVICES: dict[str, dict[str, str]] = {
     "bazarr": {"label": "Bazarr", "prefix": "/api", "auth": "x-api-key"},
     "seerr": {"label": "Seerr", "prefix": "/api/v1", "auth": "x-api-key"},
     "jellyfin": {"label": "Jellyfin", "prefix": "", "auth": "jellyfin"},
+    "plex": {"label": "Plex", "prefix": "", "auth": "plex"},
     "qbittorrent": {"label": "qBittorrent", "prefix": "/api/v2", "auth": "cookie"},
     "tdarr": {"label": "Tdarr", "prefix": "/api/v2", "auth": "x-api-key"},
 }
@@ -64,7 +66,8 @@ SERVICES: dict[str, dict[str, str]] = {
 # destructive  needs confirm=true AND confirm_phrase "<service> <METHOD> <path>"
 
 # Anything with these in the path is never sent. They carry passwords or keys.
-BLOCKED_PARTS = ("/auth/", "authenticate", "initialize.js", "/quickconnect")
+BLOCKED_PARTS = ("/auth/", "authenticate", "initialize.js", "/quickconnect",
+                 "/myplex", "/security/token", "/accounts")
 
 # A non-GET call with one of these in the path is destructive.
 DESTRUCTIVE_PARTS = (
@@ -88,12 +91,18 @@ RISKY_QBIT_PREFS = {
 SECRET_KEYS = {
     "apikey", "password", "passwordconfirmation", "token", "accesstoken",
     "secret", "api_key", "web_ui_password", "authtoken",
-    "seededapikey", "authsecretkey",
+    "seededapikey", "authsecretkey", "x-plex-token", "plextoken",
 }
 
 # Tdarr uses POST for database reads. These modes only read.
 TDARR_READ_MODES = {"getall", "getbyid", "getbyidmulti", "getone", "count"}
 SECRET_FIELD_NAMES = {"apikey", "password", "token", "secret", "passkey", "username"}
+
+# Plex does some changes with GET. These are treated as changes, not reads.
+PLEX_GET_CHANGES = ("/refresh", "/analyze", "/emptytrash", "/:/", "/butler",
+                    "/updater/", "/library/optimize", "/unmatch", "/match",
+                    "/prefs")
+PLEX_GET_DESTRUCTIVE = ("/emptytrash", "/updater/apply", "/butler")
 
 METHODS = ("GET", "POST", "PUT", "DELETE", "PATCH")
 
@@ -102,6 +111,12 @@ def classify(service: str, method: str, path: str,
              params: dict[str, Any] | None = None, body: Any = None) -> str:
     m = method.upper()
     low = path.lower().rstrip("/")
+    if service == "plex" and m == "GET":
+        if any(part in low for part in PLEX_GET_DESTRUCTIVE):
+            return "destructive"
+        if any(part in low for part in PLEX_GET_CHANGES) and low != "/prefs":
+            return "change"
+        return "read"
     if m == "GET":
         return "read"
     if m == "DELETE":
@@ -344,6 +359,8 @@ def _request(service: str, method: str, path: str,
         headers["X-Api-Key"] = key
     elif svc["auth"] == "jellyfin":
         headers["Authorization"] = f'MediaBrowser Token="{key}"'
+    elif svc["auth"] == "plex":
+        headers["X-Plex-Token"] = key
     else:  # qbittorrent
         if base not in _qbit_cookie:
             err = _qbit_login(base)
@@ -442,7 +459,7 @@ def _get(service: str, path: str, **params: Any) -> dict[str, Any]:
 @mcp.tool()
 def arr_services() -> str:
     """List which services are set up (Sonarr, Radarr, Prowlarr, Bazarr,
-    Seerr, Jellyfin, qBittorrent, Tdarr). Shows addresses only, never keys."""
+    Seerr, Jellyfin, Plex, qBittorrent, Tdarr). Shows addresses only, never keys."""
     on = set(configured())
     rows = []
     for name, svc in SERVICES.items():
@@ -468,7 +485,7 @@ def arr_call(
 ) -> str:
     """Call any API path on a service.
 
-    service: sonarr, radarr, prowlarr, bazarr, seerr, jellyfin, qbittorrent or tdarr.
+    service: sonarr, radarr, prowlarr, bazarr, seerr, jellyfin, plex, qbittorrent or tdarr.
     path: the path after the API root, for example /series, /movie/12,
       /system/status, /torrents/info, /Items, /get-nodes. Do not add a query string.
     method: GET, POST, PUT, DELETE or PATCH.
@@ -476,7 +493,9 @@ def arr_call(
     body: JSON body for POST and PUT (not used by qBittorrent).
 
     API roots added for you: Sonarr and Radarr /api/v3, Prowlarr and Seerr
-    /api/v1, Bazarr /api, qBittorrent and Tdarr /api/v2, Jellyfin none.
+    /api/v1, Bazarr /api, qBittorrent and Tdarr /api/v2, Jellyfin and Plex none.
+    Plex paths look like /library/sections, /status/sessions, /accounts is blocked.
+    Plex answers in JSON because this tool asks for it.
 
     Tdarr reads its database with POST /cruddb and a body like
     {"data": {"collection": "LibrarySettingsJSONDB", "mode": "getAll"}}.
@@ -553,6 +572,10 @@ def _probe(name: str) -> dict[str, Any]:
             st = need(_get(name, "/System/Info")) or {}
             return {"server": st.get("ServerName"), "version": st.get("Version"),
                     "restart_pending": st.get("HasPendingRestart")}
+        if name == "plex":
+            st = (need(_get(name, "/")) or {}).get("MediaContainer", {})
+            return {"server": st.get("friendlyName"), "version": st.get("version"),
+                    "platform": st.get("platform"), "signed_in": st.get("myPlex")}
         if name == "tdarr":
             st = need(_get(name, "/status")) or {}
             nodes = need(_get(name, "/get-nodes")) or {}
@@ -841,6 +864,51 @@ def jellyfin_now_playing() -> str:
             "paused": (s.get("PlayState") or {}).get("IsPaused") if item else None,
         })
     return json.dumps(rows, indent=1, ensure_ascii=False) if rows else "No active sessions."
+
+
+@mcp.tool()
+@_safe
+def plex_now_playing() -> str:
+    """Show who is watching on Plex right now, and on which device."""
+    res = _get("plex", "/status/sessions")
+    if not res.get("ok"):
+        return _render(res)
+    rows = []
+    for m in ((res["data"] or {}).get("MediaContainer") or {}).get("Metadata", []) or []:
+        player = m.get("Player") or {}
+        title = m.get("title")
+        if m.get("grandparentTitle"):
+            title = f"{m.get('grandparentTitle')} - {title}"
+        rows.append({
+            "user": (m.get("User") or {}).get("title"), "device": player.get("title"),
+            "app": player.get("product"), "playing": title, "type": m.get("type"),
+            "state": player.get("state"),
+            "transcoding": bool(m.get("TranscodeSession")),
+        })
+    return json.dumps(rows, indent=1, ensure_ascii=False) if rows else "No active sessions."
+
+
+@mcp.tool()
+@_safe
+def plex_libraries() -> str:
+    """List the Plex libraries with their folders and how many items each has."""
+    res = _get("plex", "/library/sections")
+    if not res.get("ok"):
+        return _render(res)
+    rows = []
+    for d in ((res["data"] or {}).get("MediaContainer") or {}).get("Directory", []) or []:
+        count = None
+        c = _get("plex", f"/library/sections/{d.get('key')}/all",
+                 **{"X-Plex-Container-Start": 0, "X-Plex-Container-Size": 0})
+        if c.get("ok"):
+            mc = (c["data"] or {}).get("MediaContainer") or {}
+            count = mc.get("totalSize", mc.get("size"))
+        rows.append({
+            "id": d.get("key"), "title": d.get("title"), "type": d.get("type"),
+            "folders": [loc.get("path") for loc in d.get("Location", []) or []],
+            "items": count, "scanning": d.get("refreshing"),
+        })
+    return json.dumps(rows, indent=1, ensure_ascii=False) if rows else "No libraries."
 
 
 def main() -> None:

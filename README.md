@@ -1,6 +1,6 @@
 # Arr MCP
 
-![Version](https://img.shields.io/badge/version-2026.10.05.01-blue)
+![Version](https://img.shields.io/badge/version-2026.10.20.01-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 A small tool that lets Claude read and manage your media stack:
@@ -12,6 +12,7 @@ A small tool that lets Claude read and manage your media stack:
 - Seerr (requests)
 - qBittorrent (downloads)
 - Jellyfin (your media server)
+- Plex (your other media server)
 - Tdarr (video conversion)
 
 It runs on your own computer. Your keys stay on your computer.
@@ -23,7 +24,8 @@ Only the services you set up are turned on.
 - Show the download queue, torrents, and upcoming episodes and movies.
 - Search for a show or movie and add it (`arr_add`).
 - Show Seerr requests. Approve or decline them.
-- Show who is watching on Jellyfin.
+- Show who is watching on Jellyfin and Plex.
+- List Plex libraries with item counts (`plex_libraries`).
 - Show what Tdarr is converting, and which files failed (`tdarr_summary`).
 - Anything else the apps can do (`arr_call`), for example refresh a library,
   trigger a search, pause a torrent, or change a setting.
@@ -53,6 +55,7 @@ Other protections:
 - Bazarr: Settings, General, Security, API Key.
 - Seerr: Settings, General, API Key.
 - Jellyfin: Dashboard, API Keys, add a key named `Claude`.
+- Plex: it has no key page. Use your Plex token (open any item in Plex Web, Get Info, View XML, copy the `X-Plex-Token` from the address bar). Treat it like a password.
 - Tdarr: Tools, API Keys, make a key named `Claude`.
 - qBittorrent: it has no key. Use your web page user name and password.
   Best: turn on the web page login for a separate user if your version allows it.
@@ -91,7 +94,7 @@ Ask Claude: "Check my arr stack."
 ## Settings
 
 - `ARR_<SERVICE>_URL` and `ARR_<SERVICE>_KEY`: see the example file.
-  Services are `SONARR`, `RADARR`, `PROWLARR`, `BAZARR`, `SEERR`, `JELLYFIN`, `TDARR`.
+  Services are `SONARR`, `RADARR`, `PROWLARR`, `BAZARR`, `SEERR`, `JELLYFIN`, `PLEX`, `TDARR`.
 - `ARR_QBITTORRENT_URL`. `ARR_QBITTORRENT_USER` and `ARR_QBITTORRENT_PASS` are optional. Leave them out if qBittorrent skips the login for your network.
 - `ARR_VERIFY_TLS=false`: for an https address with a self-signed certificate.
 - `ARR_TIMEOUT`: seconds to wait for an answer. Default 30.
@@ -107,6 +110,8 @@ Ask Claude: "Check my arr stack."
 - `arr_downloads`: qBittorrent torrents.
 - `arr_requests`: Seerr requests.
 - `jellyfin_now_playing`: who is watching.
+- `plex_now_playing`: who is watching on Plex.
+- `plex_libraries`: Plex libraries, folders and item counts.
 - `tdarr_summary`: Tdarr nodes, workers, files by state, failed files.
 - `arr_call`: any other API call.
 
@@ -117,7 +122,7 @@ pip install "mcp>=1.2,<2"
 python tests/test_server.py
 ```
 
-The test starts a fake server that acts like all eight services.
+The test starts a fake server that acts like all nine services.
 It checks every tool and every safety rule.
 
 ## Limits

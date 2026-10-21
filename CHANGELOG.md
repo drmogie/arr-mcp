@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026.10.20.01
+
+- Added Plex. Set ARR_PLEX_URL and ARR_PLEX_KEY (a Plex token).
+- New tools `plex_now_playing` (who is watching) and `plex_libraries` (libraries, folders, item counts).
+- `arr_call` works with `plex`. The token is sent as a header, never in the URL, and is hidden in results.
+- Plex does some changes with GET (refresh, analyze, empty trash, prefs). These need confirm like any change. Empty trash and updates are destructive.
+- Account and token paths (`/myplex`, `/accounts`, `/security/token`) are blocked.
+
 ## 2026.10.12.01
 
 - Added Tdarr (video conversion). Set ARR_TDARR_URL and ARR_TDARR_KEY.
